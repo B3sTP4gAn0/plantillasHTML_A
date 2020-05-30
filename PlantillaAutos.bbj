@@ -1,0 +1,344 @@
+REM /**
+REM  * PlantillaAutos.bbj
+REM  * @author bryan
+REM  * -------------------------
+REM  * Clase que contiene los metodos comunes
+REM  * para manejo de las plantillas html de autos 
+REM  */
+
+use java.io.BufferedReader
+use java.io.FileReader
+use java.util.HashMap
+use java.util.ArrayList
+
+declare PlantillaAutos p!
+p! = new PlantillaAutos()
+p!.consutaSQLGeneral("0200004623","0001")
+
+class public PlantillaAutos
+
+    field private BBjString hoy!
+    field private BBjString hoyLetras!
+
+    field private BBjString connectString! = "jdbc:basis:localhost?database=DBPRUEBAS&USER=guest"
+    field private BBjString dirDestinoPlantillas!
+    field private BBjString dirDePlantillas!
+
+    field private BBjString nombreAsegurado!
+    field private BBjString nit!
+    field private BBjString tipoAuto!
+    field private BBjString marca!
+    field private BBjString linea!
+    field private BBjString modeloAuto!
+    field private BBjString tipoPlaca!
+    field private BBjString numPlaca!
+    field private BBjString motor!
+    field private BBjString chasis!
+    field private BBjString color!
+    field private BBjString dirAsegurado!
+    field private BBjString nomFacturador!
+    field private BBjString dirFacturador!
+    field private BBjString dirCobro!
+    field private BBjString dirFiscal!
+    field private BBjString usuario!
+    field private BBjString vDel!
+    field private BBjString vAl!
+    field private BBjString agente!
+
+    field private BBjString sql!
+    field private BBjString reg!
+    field private BBjInt    ceiba2002!
+
+    method public PlantillaAutos(BBjString dirPlantillas!, BBjString dirDestino!)
+        #dirDePlantillas! = dirPlantillas!
+        #dirDestinoPlantillas! = dirDestino!
+        #hoy! = date(0:"%Dz%Mz%Yl")
+        #hoyLetras! = date(0:"%Dz de %Ml del %Yl")
+    methodEnd
+
+    rem /**
+    rem  * -------------------------
+    rem  * Consulta para obtener los datos generales para generar las plantillas
+    rem  * -------------------------
+    rem  */
+    method public void consultaSQLGeneral(BBjString poliza!, BBjString inciso!)
+        rem !!! sql$ = "select A.*, B.POLIZA, B.ASEGURADO, B.DIRECCION_ASE, B.DIRECCION_COB, C.DTIPO, D.DMARCA, D.DLINEA, E.MONTO, E.PRIMA, E.DEDUCIBLE from TB_INCISOS A, TB_POLIZAS B, TB_TIPOAUTOS C, TB_AUTOMOVILES D, TB_COBERTURAS E where A.POLIZA = B.POLIZA AND A.TIPOAUTO = C.TIPOAUTO and A.MARCAYLINEA = D.MARCAYLINEA and B.POLIZA='" + #poliza! + "' and A.INCISO='" + #inciso! + "' and A.TARIFA <> 'EXCLUIDO' AND E.POLIZA = A.POLIZA"
+        select$ = " select A.*, B.*, C.DTIPO, D.DMARCA, D.DLINEA, E.COLOR AS DESC_COLOR "
+        from$ = " from TB_INCISOS A "
+        join$ = " inner join TB_POLIZAS B on B.poliza = a.poliza "
+        join$ = join$ + " inner join TB_TIPOAUTOS C on C.tipoauto = a.tipoauto "
+        join$ = join$ + " inner join TB_AUTOMOVILES D on D.MARCAYLINEA = A.MARCAYLINEA "
+        join$ = join$ + " inner join TB_COLORES E on E.poliza = B.poliza and E.inciso = A.inciso "
+        where$ = " where A.POLIZA='" + poliza! + "' and A.INCISO='" + inciso! + "' and A.TARIFA <> 'EXCLUIDO'"
+
+        sql$ = select$ + from$ + join$ + where$
+        System.out.println("<<<" + sql$)
+        #abrirDB()
+        sqlPrep(#ceiba2002!)sql$
+        sqlExec(#ceiba2002!)
+        dim reg$ : sqlTmpl(#ceiba2002!)
+        reg$ = sqlFetch(#ceiba2002!, err = *next)
+        rem !!! #anexo! = iff(reg.endoso$ = "00000000", poliza!.substring(2), reg.endoso$)
+        #nombreAsegurado! = reg.asegurado$
+        #nit!= reg.NIT$
+        #tipoAuto! = reg.dTipo$
+        #marca! = reg.dMarca$
+        #linea! = reg.dLinea$
+        #modeloAuto! = reg.ano$
+        #tipoPlaca! = reg.tipoPlaca$
+        #numPlaca! = reg.placa$
+        #motor! = reg.motor$
+        #color! = reg.desc_color$
+        #chasis! = reg.chasis$
+        #usuario! = reg.usuario$
+        #agente! = reg.agente$
+        #vDel! = reg.vdel$
+        #vAl! = reg.vAl$
+        #dirAsegurado! = reg.DIRECCION_ASE$
+        #dirCobro! = reg.DIRECCION_COB$
+        #nomFacturador! = reg.FACTURARA$
+        #dirFacturador! = reg.DIRECCFACTURA$
+        #cerrarDB()
+    methodEnd
+
+    rem /**
+    rem  * -------------------------
+    rem  * Abrir base de datos
+    rem  * -------------------------
+    rem  */
+    method private void abrirDB()
+        #ceiba2002! = sqlUnt
+        sqlOpen(#ceiba2002!)#connectString!
+    methodEnd
+
+    rem /**
+    rem  * -------------------------
+    rem  * Cerrar base de datos
+    rem  * -------------------------
+    rem  */
+    method private void cerrarDB()
+        sqlClose(#ceiba2002!)
+    methodEnd
+    rem /**
+    rem  * -------------------------
+    rem  * Recuperar contenido del html
+    rem  * de la plantilla
+    rem  * -------------------------
+    rem  * params:
+    rem  *  BBjString nombrePlantilla! = El nombre y la extencion del documento de plantilla
+    rem  */
+    method protected BBjString recuperarContenidoPlantilla(BBjString nombrePlantilla!)
+        declare BBjString plantilla!
+        plantilla! = ""
+        buffer! = new BufferedReader(new FileReader(#dirDePlantillas! + nombrePlantilla!))
+        cadena! = ""
+        cadena! = buffer!.readLine()
+        while (cadena! <> null())
+            plantilla! = plantilla! + cadena!
+            cadena! = buffer!.readLine()
+        wend
+        methodRet plantilla!
+    methodEnd
+
+    rem /**
+    rem  * -------------------------
+    rem  * Reemplazos constantes.
+    rem  * -------------------------
+    rem  * Estan en todas las plantillas
+    rem  */
+    method protected BBjString reemplazosConstantes(BBjString poliza!, BBjString anexo!, BBjString inciso!, BBjString plantilla!)
+        plantilla! = plantilla!.replaceAll("%anexo%", anexo!)
+        plantilla! = plantilla!.replaceAll("%poliza%", poliza!)
+        plantilla! = plantilla!.replaceAll("%inciso%", inciso!)
+        plantilla! = plantilla!.replaceAll("%nombreAsegurado%", #nombreAsegurado!)
+        plantilla! = plantilla!.replaceAll("%fecha%", #hoyLetras!)
+        plantilla! = plantilla!.replaceAll("%usuario%", #usuario!)
+        plantilla! = plantilla!.replaceAll("%agente%", #agente!)
+        methodRet plantilla!
+    methodEnd
+
+    rem /**
+    rem  * -------------------------
+    rem  * Generar html con la plantilla debidamente modificada
+    rem  * -------------------------
+    rem  */
+    method protected void generarReporte(BBjString nombrePlantilla!, BBjString plantilla!)
+        reporte$ = #dirDestinoPlantillas! + nombrePlantilla!.substring(0, nombrePlantilla!.indexOf(".")) + "_" + cvs(#usuario!, 7) + ".html"
+        erase reporte$, err =*next
+        string reporte$
+        html = unt
+        open(html)reporte$
+        writeRecord(html, siz = 10000)plantilla!
+        close(html)
+    methodEnd
+
+    rem /**
+    rem  * -------------------------
+    rem  * Rellenar con espacios en blanco en formato html
+    rem  * -------------------------
+    rem  */
+    method protected BBjString paddingHTML(BBjString cadena!, BBjInt lim!)
+        ini = len(cadena!)
+        if ini < lim!
+            for i = ini to lim! - 1
+                cadena! = cadena! + "&nbsp;"
+            next i
+        fi
+        methodRet cadena!
+    methodEnd
+
+    rem /**
+    rem  * -------------------------
+    rem  * Convertir nomedas de numeros a letras
+    rem  * y tipo moneda Q/$
+    rem  * -------------------------
+    rem  * params:
+    rem  *   BBjString valor!:
+    rem  *     valor a converir a letras. Manejado como BBjString, no BBjNumber porque de todas formas
+    rem  *     debe convertirse a tipo primitivo numerico bbx "num()" para que funcione dentro "&NUMLET2"
+    rem  */
+    method protected BBjString numLet(BBjString valor!, BBjString tipoPoliza!)
+        call "&NUMLET2", num(valor!), valorLetras$
+        moneda$ = iff(tipoPoliza! = "D","DOLARES","QUETZALES") + " "
+        con = pos("CON" = valorLetras$)
+        valorLetras$ = valorLetras$(1, con - 1) + moneda$
+        centavos = fpt(num(valor!))
+        valorLetras$ = valorLetras$ + "CON " + str(centavos:"00") + "/100"
+        methodRet valorLetras$
+    methodEnd
+    
+    method public BBjString getDirPlantillas()
+        methodRet #dirDePlantillas!
+    methodEnd
+
+    method public BBjString getDirDestino()
+        methodRet #dirDestinoPlantillas!
+    methodEnd
+
+    rem ' -------------------------
+    rem ' Getters
+    rem ' -------------------------
+    
+    method public BBjString getNombreAsegurado()
+        methodRet #nombreAsegurado!
+    methodEnd
+    
+    method public BBjString getNit()
+        methodRet #nit!
+    methodEnd
+    
+    method public BBjString getInciso()
+        methodRet #inciso!
+    methodEnd
+    
+    method public BBjString getTipoAuto()
+        methodRet #tipoAuto!
+    methodEnd
+    
+    method public BBjString getMarca()
+        methodRet #marca!
+    methodEnd
+    
+    method public BBjString getLinea()
+        methodRet #linea!
+    methodEnd
+    
+    method public BBjString getModeloAuto()
+        methodRet #modeloAuto!
+    methodEnd
+    
+    method public BBjString getTipoPlaca()
+        methodRet #tipoPlaca!
+    methodEnd
+    
+    method public BBjString getNumPlaca()
+        methodRet #numPlaca!
+    methodEnd
+    
+    method public BBjString getMotor()
+        methodRet #motor!
+    methodEnd
+    
+    method public BBjString getChasis()
+        methodRet #chasis!
+    methodEnd
+    
+    method public BBjString getColor()
+        methodRet #color!
+    methodEnd
+    
+    method public BBjString getDirAsegurado()
+        methodRet #dirAsegurado!
+    methodEnd
+    
+    method public BBjString getNomFacturador()
+        methodRet #nomFacturador!
+    methodEnd
+
+    method public BBjString getDirFacturador()
+        methodRet #dirFacturador!
+    methodEnd
+
+    method public BBjString getDirCobro()
+        methodRet #dirCobro!
+    methodEnd
+
+    method public BBjString getDirFiscal()
+        methodRet #dirFiscal!
+    methodEnd
+
+    method public BBjString getUsuario()
+        methodRet #usuario!.trim()
+    methodEnd
+
+    method public BBjString getAgente()
+        methodRet #agente!
+    methodEnd
+
+    method public BBjString getVdelLetras()
+        declare BBjString vDel!
+        vDel! = #getFechaLetras(#vDel!)
+        methodRet vDel!
+    methodEnd
+
+    method public BBjString getValLetras()
+        declare BBjString vAl!
+        vAl! = #getFechaLetras(#vAl!)
+        methodRet vAl!
+    methodEnd
+
+    rem /**
+    rem  * -------------------------
+    rem  * Covertir fecha de 'DDMMAAAA' a 'DD de MESLETRAS del AÑO'
+    rem  * -------------------------
+    rem  * @param <BBjString> fecha! - DDMMAAAA
+    rem  */
+    method private BBjString getFechaLetras(BBjString fecha!)
+        fecha$ = fecha!
+        fecha$ = fecha$(1,2) + " de " + #mesLetras(num(fecha$(3,2))) + fecha$(5)
+        fecha! = fecha$
+        methodRet fecha!
+    methodEnd
+    
+    method private BBjString mesLetras(BBjInt mes!)
+        switch (mes)
+            case 1  ;methodRet "enero"; break
+            case 2  ;methodRet "febrero"; break
+            case 3  ;methodRet "marzo"; break
+            case 4  ;methodRet "abril"; break
+            case 5  ;methodRet "mayo"; break
+            case 6  ;methodRet "junio"; break
+            case 7  ;methodRet "julio"; break
+            case 8  ;methodRet "agosto"; break
+            case 9  ;methodRet "septiembre"; break
+            case 10 ;methodRet "octubre"; break
+            case 11 ;methodRet "noviembre"; break
+            case 12 ;methodRet "diciembre"; break
+            case default; methodRet ""; break
+        swEnd
+    methodEnd
+    
+    method public BBjString getConnectString()
+        methodRet #connectString!
+    methodEnd
+classEnd

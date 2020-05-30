@@ -1,0 +1,145 @@
+REM /**
+REM  * Anulacion.bbj
+REM  * @author bryan
+REM  *
+REM  */
+
+use ::PlantillaAutos.bbj::PlantillaAutos
+
+use java.util.ArrayList
+use com.basiscomponents.bc.SqlQueryBC
+use com.basiscomponents.db.ResultSet
+use com.basiscomponents.db.DataRow
+
+class public Anulacion extends PlantillaAutos
+    field private BBjAPI api!
+    field private HashMap   aclaraciones!
+    field private BBjString hoy!
+    field private BBjString hoyLetras!
+    field private BBjString plantilla!
+
+    field private BBjString poliza!
+    field private BBjString anexo!
+    field private BBjString inciso!
+    field private ResultSet rs!
+    field private DataRow dr!
+    field private ArrayList lstAnulaciones!
+    
+    field private BBjString prima!
+    field private BBjString emision!
+    field private BBjString rpf!
+    field private BBjString iva!
+    field private BBjString totalPrima!
+    
+    field private BBjString mask! = "###,###,##0.00"
+    
+    method public Anulacion(BBjString poliza!, BBjString anexo!, BBjString inciso!, BBjString dirPlantillas!, BBjString dirDestino!)
+        #super!(dirPlantillas!, dirDestino!)
+        #poliza! = poliza!
+        #anexo! = anexo!
+        #inciso! = inciso!
+        #api! = BBjAPI()
+        #this!.consultaSQLGeneral(poliza!,inciso!)
+        #rs! = #consultaSQL()
+    methodEnd
+    
+    rem /**
+    rem  * -------------------------
+    rem  * Generar varias anulaciones
+    rem  * -------------------------
+    rem  * @param <ArrayList> anulaciones! - Lista de las anulaciones a generar
+    rem  */
+    method public void generarVarias(ArrayList anulaciones!)
+        if anulaciones!.contains("ANULACION CON DEVOLUCION DE PRIMA") then #devolucionPrima()
+    methodEnd
+
+    rem /**
+    rem  * -------------------------
+    rem  * Anulacion con devolucion de prima
+    rem  * -------------------------
+    rem  */
+    method private void devolucionPrima()
+        nombrePlantilla! = "ANULACION_CON_DEVOL.html"
+        #plantilla! = #this!.recuperarContenidoPlantilla(nombrePlantilla!)
+        #plantilla! = #this!.reemplazosConstantes(#poliza!, #anexo!, #inciso!, #plantilla!)
+        #dr! = #rs!.iterator().next()
+        
+        prima! = #dr!.getFieldAsNumber("PMANETA")
+        emision! = #dr!.getFieldAsNumber("EMISION")
+        rpf! = #dr!.getFieldAsNumber("RPF")
+        iva! = #dr!.getFieldAsNumber("IVA")
+        totalPrima! = #dr!.getFieldAsNumber("TOTALPRIMA")
+        
+        prima!   = iff(prima! < 0, prima!* -1, prima!)
+        emision! = iff(emision! < 0, emision!* -1, emision!)
+        rpf!     = iff(rpf! < 0, rpf!* -1, rpf!)
+        iva!     = iff(iva! < 0, iva!* -1, iva!)
+        totalPrima! = iff(totalPrima! < 0, totalPrima!* -1, totalPrima!)
+
+        #prima!   = str(prima!:#mask!)
+        #emision! = str(emision!:#mask!)
+        #rpf!     = str(rpf!:#mask!)
+        #iva!     = str(iva!:#mask!)
+        #totalPrima! = str(totalPrima!:#mask!)
+
+        #prima!   = #prima!.replace(" ", "&nbsp;")
+        #emision! = #emision!.replace(" ", "&nbsp;")
+        #rpf!     = #rpf!.replace(" ", "&nbsp;")
+        #iva!     = #iva!.replace(" ", "&nbsp;")
+
+        #reemplazosDevolPrima()
+        #this!.generarReporte(nombrePlantilla!, #plantilla!)
+    methodEnd
+
+    rem /**
+    rem  * -------------------------
+    rem  * Reemplazos de anulacion con devolucion de prima
+    rem  * -------------------------
+    rem  */
+    method private void reemplazosDevolPrima()
+        #plantilla! = #plantilla!.replaceAll("%primaDevolver%", #prima!)
+        #plantilla! = #plantilla!.replaceAll("%emision%", #emision!)
+        #plantilla! = #plantilla!.replaceAll("%rpf%", #rpf!)
+        #plantilla! = #plantilla!.replaceAll("%iva%", #iva!)
+        #plantilla! = #plantilla!.replaceAll("%total%", #totalPrima!.replaceAll(" ", "&nbsp;"))
+        fechaEfectiva$ = #dr!.getFieldAsString("FECHAEFECTIVA")
+        fechaEfectiva$ = str(num(fechaEfectiva$):"00/00/0000")
+        moneda$ = iff(#dr!.getFieldAsString("TIPOPOLIZA")= "D", "$", "Q")
+        totalPrimaLetras$ = #this!.numLet(#dr!.getFieldAsString("TOTALPRIMA"), #dr!.getFieldAsString("TIPOPOLIZA"))
+        vDel$ = #this!.getVdelLetras()
+        vAl$ = #this!.getValLetras()
+        #plantilla! = #plantilla!.replaceAll("%fechaEfectiva%", fechaEfectiva$)
+        #plantilla! = #plantilla!.replaceAll("%moneda%", moneda$)
+        #plantilla! = #plantilla!.replaceAll("%totalPrima%", cvs(str(num(#totalPrima!):#mask!),3))
+        #plantilla! = #plantilla!.replaceAll("%vDelLetras%", vDel$)
+        #plantilla! = #plantilla!.replaceAll("%vAlLetras%", vAl$)
+        #plantilla! = #plantilla!.replaceAll("%totalPrimaLetras%", totalPrimaLetras$)
+    methodEnd
+
+    method private ResultSet consultaSQL()
+        declare ResultSet rs!
+        sql$ = "select a.*, b.tipopoliza from ENDOSOS_A a inner join TB_POLIZAS B ON B.POLIZA = A.POLIZA where A.poliza = '" + #poliza! + "'"
+        con! = #api!.getJDBCConnection(#this!.getConnectString())
+        stmt! = con!.createStatement()
+        rs! = new ResultSet(stmt!.executeQuery(sql$))
+        stmt!.close()
+        con!.close()
+        methodRet rs!
+    methodEnd
+
+    rem /**
+    rem  * -------------------------
+    rem  * 
+    rem  * -------------------------
+    rem  */
+    method private ArrayList lstAnulaciones()
+        declare ArrayList lst!
+        sql$ = "select * from PLANTILLAS_AUTO where DESCRIPCION like 'ANULACION%'"
+        con! = #api!.getJDBCConnection(#this!.getConnectString())
+        stmt! = con!.createStatment()
+        rs! = new ResultSet(stmt!.executeQuery(sql$))
+        stmt!.close()
+        con!.close()
+        methodRet lst!
+    methodEnd
+classEnd

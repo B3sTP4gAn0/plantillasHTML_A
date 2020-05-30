@@ -1,0 +1,334 @@
+REM /**
+REM  * menuAclaraciones.bbj
+REM  * @author bryan
+REM  * @date   13/05/2020
+REM  * -------------------------
+REM  */
+
+use ::bbwindowutils.bbj::BBWindowUtils
+use java.util.Collection.List
+use java.util.HashMap
+use java.util.ArrayList
+use java.util.Iterator
+
+use ::Aclaracion.bbj::Aclaracion
+use ::Anulacion.bbj::Anulacion
+
+begin
+    rem !!! setErr inesperado
+    gosub declaraciones
+	gosub instancias
+	gosub tiposDeAclaraciones
+	gosub llenarGrid
+	gosub eventos
+release
+
+eventos:
+    win!.setCallback(win!.ON_CLOSE, "salir")
+    iePoliza!.setCallback(BBjInputE.ON_EDIT_MODIFY, "validarPoliza")
+    ieAclaracion!.setCallback(BBjInputE.ON_EDIT_MODIFY, "buscarAclaracion")
+    gridAclaraciones!.setCallback(BBjStandardGrid.ON_GRID_MOUSE_UP, "seleccionarAclaracion")
+    cbAclaraciones!.setCallback(BBjCheckBox.ON_CHECK_ON, "seleccionarTodas")
+    cbAclaraciones!.setCallback(BBjCheckBox.ON_CHECK_OFF, "seleccionarTodas")
+    tbGenerarAclaraciones!.setCallback(BBjToolButton.ON_TOOL_BUTTON_PUSH, "generarAclaraciones")
+
+    win!.setEnabled(true!)
+    iePoliza!.focus()
+	process_events
+return
+
+validarPoliza:
+    poliza! = iePoliza!.getText()
+    if poliza!.length() > 9
+        if poliza!.length() > 10
+            x = msgBox("Póliza incorrecta")
+        else
+            gosub abrirDB
+            sqlprep(db) " select * from TB_POLIZAS WHERE POLIZA LIKE '" + poliza! + "'"
+            sqlexec(db)
+            dim r$:sqltmpl(db)
+            r$=sqlfetch(db,err=*next);swfetch=true!
+            if swfetch=false! then
+                swerr=msgbox("El numero de poliza no existe",64,"Dato Incorrecto")
+                iePoliza!.focus()
+            else
+                lbEndosos!.removeAllItems()
+                lbEndosos!.addItem("Seleccione endoso")
+                items = 0
+                while 1
+                    endoso! = cvs(r.ENDOSO$,7)
+                    if (endoso! = "00000000")
+                        endoso! = str(num(poliza$(5)))
+                    fi
+                    lbEndosos!.addItem(endoso!)
+                    items = items + 1
+                    r$=sqlfetch(db,err=*break)
+                wend
+                lbEndosos!.selectIndex(iff(items,1,0))
+                gosub llenarListaIncisos
+            fi
+            gosub cerrarDB
+        fi
+    fi
+return
+rem /**
+rem  * -------------------------
+rem  * Llenar lista financiera
+rem  * -------------------------
+rem  */
+llenarListaIncisos:
+    sqlPrep(db)"SELECT INCISO FROM TB_INCISOS WHERE POLIZA LIKE '" + poliza! + "' AND TARIFA <> 'EXCLUIDO'"
+    sqlExec(db)
+    dim reg$:sqlTmpl(db)
+    lbIncisos!.removeAllItems()
+    lbIncisos!.addItem("Ningún inciso")
+    hay = false!
+    while 1
+        reg$ = sqlFetch(db, err =*break); hay = true!
+        lbIncisos!.addItem(reg.INCISO$)
+    wend
+    lbIncisos!.selectIndex(hay)
+return
+rem /**
+rem  * -------------------------
+rem  * Generar aclaraciones
+rem  * -------------------------
+rem  */
+generarAclaraciones:
+    win!.setEnabled(false!)
+    declare ArrayList lstAclaraciones!
+    lstAclaraciones! = new ArrayList()
+    lstAnulaciones!  = new ArrayList()
+    for i = 0 to gridAclaraciones!.getNumRows() -1
+        if gridAclaraciones!.getCellStyle(i, 1) = BBjStandardGrid.CHECK_DOWN_STYLE
+            rep$ = gridAclaraciones!.getCellText(i, 0)
+            switch 1
+                case pos("ACLARACION" = rep$)
+                    lstAclaraciones!.add(rep$)
+                break
+                case pos("ANULACION" = rep$)
+                    lstAnulaciones!.add(rep$)
+                break
+            swEnd
+        fi
+    next i
+    if lstAclaraciones!.isEmpty() and lstAnulaciones!.isEmpty()
+        x = msgBox("No ha seleccionado ninguna opción", 16, "Error")
+    else
+        inciso! = lbIncisos!.getSelectedItem()
+
+        if !(lstAclaraciones!.isEmpty())
+            aclaracion! = new Aclaracion(poliza!, endoso!, inciso!, dirPlantillas!, dirDestinoPlantillas!)
+            aclaracion!.generarVarias(lstAclaraciones!)
+            usuario$ = aclaracion!.getUsuario()
+        fi
+        
+        if !(lstAnulaciones!.isEmpty())
+            anulacion!  = new Anulacion(poliza!, endoso!, inciso!, dirPlantillas!, dirDestinoPlantillas!)
+            Anulacion!.generarVarias(lstAnulaciones!)
+            usuario$ = anulacion!.getUsuario()
+        fi
+        gosub guardarReporte
+    fi
+    win!.setEnabled(true!)
+return
+rem /**
+rem  * -------------------------
+rem  * Generar reporte seleccionadas en el grid
+rem  * en la maquina cliente
+rem  * -------------------------
+rem  */
+guardarReporte:
+    dirPlantillas = unt
+    open(dirPlantillas)dirDestinoPlantillas!
+    reporte = unt
+    reporte$ = dirDestinoPlantillas! + "reporte_" + usuario$ + ".html"
+    erase  reporte$, err = *next
+    string reporte$
+    open(reporte)reporte$
+    temporales! = api!.makeVector()
+    while 1
+        readRecord(dirPlantillas, err = *break)archivo$
+        if pos(usuario$ = archivo$) and !(pos("reporte_" = archivo$))then
+            archivo = unt
+            open(archivo)dirDestinoPlantillas! + archivo$
+            temporales!.addItem(archivo$)
+            while 1
+                readRecord(archivo, siz = 10000, err = *break)reg$
+                writeRecord(reporte)reg$
+            wend
+            close(archivo)
+        fi
+    wend
+    close(dirPlantillas)
+    close(reporte)
+    rem !!! if inBui! then busy!.setVisible(false!)
+    rem ' -------------------------
+    rem ' Copiar el archivo a la maquina del cliente
+    rem ' -------------------------
+    archivoCliente$ = fileSave("Guardar Reporte", "", "ACLARACIONES_" + usuario$, "html", mode = "client")
+    if !pos("::" = archivoCliente$)
+        cf! = api!.getThinClient().getClientFileSystem().getClientFile(archivoCliente$)
+        cf!.copyToClient(reporte$)
+    fi
+    rem ' Borrar archivos temporales utilizados para generar el reporte final
+    it! = temporales!.iterator()
+    while it!.hasNext()
+        borrar$ = it!.next()
+        erase dirDestinoPlantillas! + borrar$, err = *next
+    wEnd
+    erase reporte$, err = *next
+return
+
+buscarAclaracion:
+    
+return
+rem /**
+rem  * -------------------------
+rem  * Seleccionar las aclaraciones en el grid
+rem  * -------------------------
+rem  */
+seleccionarAclaracion:
+    fila = gridAclaraciones!.getSelectedRow()
+    if gridAclaraciones!.getCellStyle(fila, 1) = BBjStandardGrid.CHECK_DOWN_STYLE
+        gridAclaraciones!.setCellStyle(fila, 1, BBjStandardGrid.CHECK_UP_STYLE)
+        cbAclaraciones!.setSelected(false!)
+    else
+        gridAclaraciones!.setCellStyle(fila, 1, BBjStandardGrid.CHECK_DOWN_STYLE)
+    fi
+return
+rem /**
+rem  * -------------------------
+rem  * Seleccionar todas las aclaraciones en el grid
+rem  * -------------------------
+rem  */
+seleccionarTodas:
+    for i = 0 to gridAclaraciones!.getNumRows() -1 step 1
+        if cbAclaraciones!.isSelected()
+            gridAclaraciones!.setCellStyle(i, 1, BBjStandardGrid.CHECK_DOWN_STYLE)
+        else
+            gridAclaraciones!.setCellStyle(i, 1, BBjStandardGrid.CHECK_UP_STYLE)
+        fi
+    next i
+return
+
+salir:
+    release
+return
+rem /**
+rem  * -------------------------
+rem  * Declaraciones de tipos de datos
+rem  * -------------------------
+rem  */
+declaraciones:
+    declare BBjAPI            api!
+    declare BBjSysGui         gui!
+    declare BBjTopLevelWindow win!
+    declare Boolean           true!
+    declare Boolean           false!
+    declare Boolean           bui!
+    declare BBjBusyIndicator  busy!
+    rem -------------------------
+    declare Aclaracion aclaracion!
+    declare Anulacion anulacion!
+    declare BBjString dirPlantillas!
+    declare BBjString dirDestinoPlantillas!
+    rem -------------------------
+    declare BBjInputE iePoliza!
+    declare BBjListButton lbEndosos!
+    declare BBjListButton lbIncisos!
+    declare BBjInputE ieAclaracion!
+    declare BBjStandardGrid gridAclaraciones!
+    declare BBjCheckBox cbAclaraciones!
+    declare BBjToolButton tbGenerarAclaraciones!
+return
+rem /**
+rem  * -------------------------
+rem  * Instancias de claes 
+rem  * y valores iniciales para variables
+rem  * -------------------------
+rem  */
+instancias:
+    api! = BBjAPI()
+    true!  = Boolean.TRUE
+    false! = Boolean.FALSE
+    gui! = api!.openSysGui("X0")
+    res = gui!.resOpen("menuAclaraciones.arc")
+    win! = gui!.createTopLevelWindow(res,101)
+    win!.setEnabled(false!)
+    BBWindowUtils.centerWindow(win!)
+    bui!   = iff(info(3,6)="5",true!,false!)
+    if bui!
+        busy!  = api!.getBuiManager().getBusyIndicator()
+    fi
+    rem -------------------------
+    REM     dirPlantillas! = "/home/bryan/eclipse-workspace/ACLARACIONES/platillas/"
+    REM     dirDestinoPlantillas! = "/home/bryan/Escritorio/reportes/"
+        dirPlantillas! = "C:\Users\bryan\eclipse-workspace\ACLARACIONES\platillas\"
+        dirDestinoPlantillas! = "C:\Users\bryan\Desktop\reportes\"
+        connectString$ = "jdbc:basis:localhost?database=DBPRUEBAS&user=guest"
+    REM     p$ = "0200004362", e$ = "R0000869", i$ = "0002"
+REM     dirPlantillas! = "/usr/local/CEIBA2002/plantillas/"
+REM     dirDestinoPlantillas! = dirPlantillas! + "tmp/"
+REM     connectString$ = "jdbc:basis:datos?database=CEIBA2002&user=guest"
+    rem -------------------------
+    iePoliza! = win!.getInputE("iePoliza")
+    lbEndosos! = win!.getListButton("lbEndosos")
+    lbIncisos! = win!.getListButton("lbIncisos")
+    ieAclaracion! = win!.getInputE("ieAclaracion")
+    gridAclaraciones! = win!.getStandardGrid("gridAclaraciones")
+    gridAclaraciones!.setColumnHeaderCellText(0, "Aclaración")
+    gridAclaraciones!.setMultipleSelection(true!)
+    cbAclaraciones! = win!.getCheckBox("cbAclaraciones")
+    tbGenerarAclaraciones! = win!.getToolButton("tbGenerarAclaraciones")
+return
+
+abrirDB:
+    db = sqlUnt
+    sqlOpen(db)connectString$
+return
+cerrarDB:
+    sqlCLose(db)
+return
+
+rem /**
+rem  * -------------------------
+rem  * Llenar grid con los nombres de las aclaraciones
+rem  * -------------------------
+rem  */
+llenarGrid:
+    gridAclaraciones!.setNumRows(0)
+    it! = tAclaraciones!.iterator()
+    while it!.hasNext()
+        descripcion$ = it!.next()
+        n = gridAclaraciones!.getNumRows()
+        gridAclaraciones!.setNumRows(n + 1)
+        gridAclaraciones!.setCellText(n, 0, descripcion$)
+        gridAclaraciones!.setCellStyle(n, 1, BBjStandardGrid.CHECK_UP_STYLE)
+    wend
+return
+rem /**
+rem  * -------------------------
+rem  * Guardar los tipos de aclaraciones
+rem  * en un ArrayList <BBjString> nombreAclaracion
+rem  * -------------------------
+rem  */
+tiposDeAclaraciones:
+    declare ArrayList tAclaraciones!
+    tAclaraciones! = new ArrayList()
+    gosub abrirDB
+    sqlPrep(db)"select * from PLANTILLAS_AUTO "
+    sqlExec(db)
+    dim reg$ : sqlTmpl(db)
+    while 1
+        reg$ = sqlFetch(db, err = *break)
+        tAclaraciones!.add(reg.DESCRIPCION$)
+    wEnd
+    gosub cerrarDB
+return
+
+inesperado:
+    use java.util.Calendar
+    use java.util.Date
+    use ::email.bbj::Email
+bye

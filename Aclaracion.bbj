@@ -1,0 +1,264 @@
+REM /**
+REM  * Aclaracion.bbj
+REM  * @author bryan
+REM  * -----
+REM  */
+
+use com.basiscomponents.bc.SqlQueryBC
+use com.basiscomponents.db.ResultSet
+use com.basiscomponents.db.DataRow
+
+use java.io.BufferedReader
+use java.io.FileReader
+use java.util.HashMap
+use java.util.ArrayList
+
+use ::PlantillaAutos.bbj::PlantillaAutos
+
+declare Aclaracion aclaracion!
+
+poliza! = "0200004362"
+inciso! = "0002"
+endoso! = "R0000869"
+
+aclaracion! = new Aclaracion(poliza!, endoso!, inciso!)
+
+aclaracion!.datosVehiculo()
+aclaracion!.datosAsegurado()
+?"listo!!!"
+wait 2
+bye
+
+class public Aclaracion extends PlantillaAutos
+
+    field private BBjAPI api!
+    field private HashMap   aclaraciones!
+    field private BBjString plantilla!
+
+    field private BBjString poliza!
+    field private BBjString anexo!
+    field private BBjString inciso!
+
+    method public Aclaracion(BBjString poliza!, BBjString anexo!, BBjString inciso!, BBjString dirPlantillas!, BBjString dirDestino!)
+        #super!(dirPlantillas!, dirDestino!)
+        #api! = BBjAPI()
+        #this!.consultaSQLGeneral(poliza!,inciso!)
+        #poliza! = poliza!
+        #inciso! = inciso!
+        #anexo!  = anexo!
+REM         #anexo!  = #this!.paddingHTML(#anexo!, 8)
+REM         #agente! = "ASDF"
+REM         #usuario! = "FJFJ"
+REM         #dirPlantillas! = dirPlantillas!
+REM         #dirDestino! = dirDestino!
+REM         #abrirDB()
+REM         #consutaSQLGeneral()
+REM         #cerrarDB()
+    methodEnd
+    rem /**
+    rem  * -------------------------
+    rem  * Generar varias aclaraciones
+    rem  * @param <ArrayList> aclaracines - tipo de aclaracion a generar
+    rem  * -------------------------
+    rem  */
+    method public void generarVarias(ArrayList aclaraciones!)
+        if aclaraciones!.contains("ACLARACION DATOS DEL VEHICULO") then #datosVehiculo()
+        if aclaraciones!.contains("ACLARACION DATOS DEL ASEGURADO") then #datosAsegurado()
+        if aclaraciones!.contains("ACLARACION DEDUCIBLE") then #datosDeducible()
+    methodEnd
+
+    method public void datosVehiculo()
+        nombrePlantilla! = "ACLARACION_VEHICULO.html"
+        #plantilla! = #this!.recuperarContenidoPlantilla(nombrePlantilla!)
+        #plantilla! = #this!.reemplazosConstantes(#poliza!, #anexo!, #inciso!, #plantilla!)
+        #reemplazosDatosVehiculo()
+        #this!.generarReporte(nombrePlantilla!, #plantilla!)
+    methodEnd
+
+    rem /**
+    rem  * -------------------------
+    rem  * Aclaracion de datos del asegurado
+    rem  * -------------------------
+    rem  */
+    method public void datosAsegurado()
+        nombrePlantilla! = "ACLARACION_ASEGURADO.html"
+        #plantilla! = #this!.recuperarContenidoPlantilla(nombrePlantilla!)
+        #plantilla! = #this!.reemplazosConstantes(#poliza!, #anexo!, #inciso!, #plantilla!)
+        #reemplazosDatosAsegurado()
+        #this!.generarReporte(nombrePlantilla!, #plantilla!)
+    methodEnd
+
+    rem /**
+    rem  * -------------------------
+    rem  * Aclaracion de datos del deducible
+    rem  * -------------------------
+    rem  */
+    method public void datosDeducible()
+        nombrePlantilla! = "ACLARACION_DEDUCIBLE.html"
+        #plantilla! = #this!.recuperarContenidoPlantilla(nombrePlantilla!)
+        #plantilla! = #this!.reemplazosConstantes(#poliza!, #anexo!, #inciso!, #plantilla!)
+        #reemplazosDatosVehiculo()
+        #reemplazosDatosAsegurado()
+        #reemplazosDatosCoberturas()
+        #this!.generarReporte(nombrePlantilla!, #plantilla!)
+    methodEnd
+
+    rem /**
+    rem  * -------------------------
+    rem  * Reemplazos Datos Vehiculo
+    rem  * -------------------------
+    rem  */
+    method private void reemplazosDatosVehiculo()
+        #plantilla! = #plantilla!.replaceAll("%tipoAuto%", #this!.getTipoAuto())
+        #plantilla! = #plantilla!.replaceAll("%marca%", #this!.getMarca())
+        #plantilla! = #plantilla!.replaceAll("%linea%", #this!.getLinea())
+        #plantilla! = #plantilla!.replaceAll("%modeloAuto%", #this!.getModeloAuto())
+        #plantilla! = #plantilla!.replaceAll("%placa%", #this!.getTipoPlaca() + "-" + #this!.getNumPlaca())
+        #plantilla! = #plantilla!.replaceAll("%motor%", #this!.getMotor())
+        #plantilla! = #plantilla!.replaceAll("%chasis%", #this!.getChasis())
+        #plantilla! = #plantilla!.replaceAll("%modelo%", #this!.getModeloAuto())
+        #plantilla! = #plantilla!.replaceAll("%color%", #this!.getColor())
+    methodEnd
+
+    method private void reemplazosDatosAsegurado()
+        #plantilla! = #plantilla!.replaceAll("%nombreAsegurado%", #this!.getNombreAsegurado())
+        #plantilla! = #plantilla!.replaceAll("%dirAsegurado%", #this!.getDirAsegurado())
+        #plantilla! = #plantilla!.replaceAll("%dirCobro%", #this!.getDirCobro())
+        #plantilla! = #plantilla!.replaceAll("%nombreFacturador%", #this!.getNomFacturador())
+        #plantilla! = #plantilla!.replaceAll("%dirFacturador%", #this!.getDirFacturador())
+        #plantilla! = #plantilla!.replaceAll("%nitFacturador%", #this!.getNit())
+    methodEnd
+
+    method private void reemplazosDatosCoberturas()
+        sql$ = " select a.*, b.tipopoliza from TB_COBERTURAS a inner join tb_polizas b on b.poliza = a.poliza where a.poliza = '" + #poliza! + "' and a.inciso = '" + #inciso! + "' and a.deducible > 0"
+        con! = #api!.getJDBCConnection(#this!.getConnectString())
+        stmt! = con!.createStatement()
+        rs! = new ResultSet(stmt!.executeQuery(sql$))
+        it! = rs!.iterator()
+        while it!.hasNext()
+            dr! = it!.next()
+            deducible$ = iff(dr!.getFieldAsString("TIPOPOLIZA") = "D", "$", "Q") + ". " + cvs(str(num(dr!.getFieldAsString("DEDUCIBLE")):"###,###,##0.00"), 3)
+            deducibleLetras$ = #this!.numLet(dr!.getFieldAsString("DEDUCIBLE"), dr!.getFieldAsString("TIPOPOLIZA"))
+            cobertura! = #nombreCobertura(cvs(dr!.getFieldAsString("NOMBRECOBERTURA"), 3))
+            nombreCobertura$ = cobertura!.get("DESCRIPCION")
+            tipoCobertura$ = cobertura!.get("COBERTURA")
+            nombreCobertura$ = #this!.paddingHTML(nombreCobertura$, 50)
+            html$ = html$ + "<p align='justify' style='margin-right:0.2cm; margin-bottom:0cm'><span style='background:transparent'><span style='font-weight:normal'><span style='color:#c0392b;'><font face='Courier New, monospace'><font size='2'><font style='font-size:10pt'>" + tipoCobertura$ + "&nbsp;</font></font></font></span></span><font face='Courier New, monospace'><font size='2'><font style='font-size:10pt'><font color='#000000'><span style='font-weight:normal'>" + nombreCobertura$ + "&nbsp; &nbsp; &nbsp;&nbsp;</span></font></font></font></font></span><span style='background:transparent'><span style='font-weight:normal'><font color='#000000'><font face='Courier New, monospace'><font size='2'><font style='font-size:10pt'>" + deducible$ + " (" + deducibleLEtras$ + ").</font></font></font></font></span></span></p>"
+        wEnd
+        stmt!.close()
+        con!.close()
+        #plantilla! = #plantilla!.replaceAll("%coberturas%", html$)
+    methodEnd
+
+    method private HashMap nombreCobertura(BBjString nombreCobertura!)
+        declare HashMap cober!
+        espacions$ = "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"
+        switch(1)
+            case nombreCobertura! = "IA"
+                cobertura$ = "Vuelcos accidentales, colisiones y otros da&ntilde;os"
+            break
+            case nombreCobertura! = "IIA"
+                cobertura$ = "Da&ntilde;os materiales a la propiedad ajena"
+            break
+            case nombreCobertura! = "IIIA"
+                cobertura$ = "Pago de gastos m&eacute;dicos y accidentes personales"
+            break
+            case nombreCobertura! = "IB"
+                cobertura$ = "Robo o hurto total"
+            break
+            case nombreCobertura! = "IIB"
+                cobertura$ = "Lesiones corporales"
+            break
+            case nombreCobertura! = "IIAB"
+                cobertura$ = "Da&ntilde;os Materiales a la propiedad ajena"
+            break
+            case default
+                cober! = new HashMap()
+                cober!.put("COBERTURA", "Cobertura")
+                cober!.put("DESCRIPCION", nombreCobertura!)
+                methodRet cober!
+            break
+        swEnd
+        cober! = new HashMap()
+        cober!.put("COBERTURA", "Secci&oacute;n")
+        cober!.put("DESCRIPCION", nombreCobertura! + " " + espacios$ + cobertura$)
+        methodRet cober!
+    methodEnd
+
+    rem /**
+    rem  * -------------------------
+    rem  * Abrir base de datos
+    rem  * -------------------------
+    rem  */
+    method private void abrirDB()
+        #ceiba2002! = sqlUnt
+        sqlOpen(#ceiba2002!)#connectString!
+    methodEnd
+    rem /**
+    rem  * -------------------------
+    rem  * Cerrar base de datos
+    rem  * -------------------------
+    rem  */
+    method private void cerrarDB()
+        sqlClose(#ceiba2002!)
+    methodEnd
+
+    rem ' -------------------------
+    rem ' Setters
+    rem ' -------------------------
+    method public void setPoliza(BBjString poliza!)
+        #poliza! = poliza!
+    methodEnd
+    method public void setAnexo(BBjString anexo!)
+        #anexo! = anexo!
+    methodEnd
+    method public void setNombreAsegurado(BBjString nomAsegurado!)
+        #nombreAsegurado! = nomAsegurado!
+    methodEnd
+    method public void setInciso(BBjString inciso!)
+        #inciso! = inciso!
+    methodEnd
+    method public void setTipoAuto(BBjString tipoAuto!)
+        #tipoAuto! = tipoAuto!
+    methodEnd
+    method public void setMarca(BBjString marca!)
+        #marca! = marca!
+    methodEnd
+    method public void setLinea(BBjString linea!)
+        #linea! = linea!
+    methodEnd
+    method public void setModeloAuto(BBjString modeloAuto!)
+        #modeloAuto! = modeloAuto!
+    methodend
+    method public void setTipoPlaca(BBjString tipoPlaca!)
+        #tipoPlaca! = tipoPlaca!
+    methodEnd
+    method public void setNumPlaca(BBjString numPlaca!)
+        #numPlaca! = numPlaca!
+    methodEnd
+    method public void setColor(BBjString color!)
+        #color! = color!
+    methodEnd
+    method public void setChasis(BBjString chasis!)
+        #chasis! = chasis!
+    methodEnd
+    method public void setAgente(BBjString agente!)
+        #agente! = agente!
+    methodEnd
+    method public void setUsuario(BBjString usuario!)
+        #usuario! = usuario!
+    methodEnd
+
+    rem /**
+    rem  * -------------------------
+    rem  * Getters
+    rem  * -------------------------
+    rem  */
+    
+    method public HashMap getDirAclaraciones()
+        directorios! = new HashMap()
+        directorios!.put("PLANTILLAS", #dirPlantillas!)
+        directorios!.put("DESTINO", #dirDestino!)
+    methodEnd
+    
+classEnd
